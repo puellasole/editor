@@ -1,18 +1,38 @@
 package editor;
 
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.*;
-import javax.tools.*;
-import java.io.*;
-import java.net.URI;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.*;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.tools.Diagnostic;
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaCompiler;
+import javax.tools.JavaFileObject;
+import javax.tools.StandardJavaFileManager;
+import javax.tools.ToolProvider;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 @Controller
 public class EditorController {
-    
-    // Хранилище задач (вместо БД)
+
+	// Хранилище задач БЕЗ готовых решений
     private static final List<Problem> PROBLEMS = Arrays.asList(
         new Problem(1, "Сумма элементов массива", 
             "Напишите программу, которая вычисляет сумму элементов массива.\n\n" +
@@ -36,10 +56,9 @@ public class EditorController {
             "import java.util.Scanner;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner scanner = new Scanner(System.in);\n        // Ваш код здесь\n    }\n}")
     );
     
-    // Тест-кейсы для каждой задачи
+    // Тест-кейсы остаются без изменений
     static final Map<Integer, List<TestCase>> TEST_CASES = new HashMap<>();
     static {
-        // Тесты для задачи 1 (Сумма массива)
         TEST_CASES.put(1, Arrays.asList(
             new TestCase("5\n1 2 3 4 5", "15", false),
             new TestCase("3\n10 20 30", "60", false),
@@ -47,7 +66,6 @@ public class EditorController {
             new TestCase("4\n0 0 0 0", "0", true)
         ));
         
-        // Тесты для задачи 2 (Максимальный элемент)
         TEST_CASES.put(2, Arrays.asList(
             new TestCase("5\n1 5 3 2 4", "5", false),
             new TestCase("3\n-10 -20 -5", "-5", false),
@@ -55,7 +73,6 @@ public class EditorController {
             new TestCase("6\n10 20 30 25 15 5", "30", true)
         ));
         
-        // Тесты для задачи 3 (Палиндром)
         TEST_CASES.put(3, Arrays.asList(
             new TestCase("radar", "YES", false),
             new TestCase("hello", "NO", false),
@@ -64,11 +81,13 @@ public class EditorController {
         ));
     }
     
+    
+    
     @GetMapping("/")
     public String editor() {
         return "editor";
     }
-    
+
     @GetMapping("/problems")
     @ResponseBody
     public List<Problem> getProblems() {
@@ -87,22 +106,24 @@ public class EditorController {
     @PostMapping("/execute")
     @ResponseBody
     public ExecutionResult executeJavaCode(@RequestBody CodeRequest request) {
-        return JavaExecutor.execute(request.getCode());
+        // Режим обычного редактора (как в первой программе)
+        return JavaExecutor.executeInteractive(request.getCode());
     }
-    
+
     @PostMapping("/test")
     @ResponseBody
     public TestExecutionResult testSolution(@RequestBody TestRequest request) {
+        // Режим тестирования (как во второй программе)
         return JavaTester.testSolution(request.getCode(), request.getProblemId());
     }
     
-    // DTO классы
+    // DTO классы (остаются без изменений)
     public static class CodeRequest {
         private String code;
         public String getCode() { return code; }
         public void setCode(String code) { this.code = code; }
     }
-    
+
     public static class TestRequest {
         private String code;
         private int problemId;
@@ -116,7 +137,7 @@ public class EditorController {
         private boolean success;
         private String output;
         private String error;
-        
+
         public ExecutionResult() {}
         public ExecutionResult(boolean success, String output, String error) {
             this.success = success;
@@ -149,7 +170,6 @@ public class EditorController {
             this.summary = summary;
         }
         
-        // getters/setters
         public boolean isSuccess() { return success; }
         public void setSuccess(boolean success) { this.success = success; }
         public List<TestResult> getTestResults() { return testResults; }
@@ -179,7 +199,6 @@ public class EditorController {
             this.hidden = hidden;
         }
         
-        // getters/setters
         public String getInput() { return input; }
         public void setInput(String input) { this.input = input; }
         public String getExpectedOutput() { return expectedOutput; }
@@ -206,7 +225,6 @@ public class EditorController {
             this.initialCode = initialCode;
         }
         
-        // getters/setters
         public int getId() { return id; }
         public void setId(int id) { this.id = id; }
         public String getTitle() { return title; }
@@ -229,7 +247,6 @@ public class EditorController {
             this.hidden = hidden;
         }
         
-        // getters/setters
         public String getInput() { return input; }
         public void setInput(String input) { this.input = input; }
         public String getExpectedOutput() { return expectedOutput; }
@@ -239,13 +256,194 @@ public class EditorController {
     }
 }
 
+
+
+class JavaExecutor {
+    
+    // РЕЖИМ 1: Для обычного редактора (красивый вывод с эмодзи)
+    public static EditorController.ExecutionResult executeInteractive(String code) {
+        editor.EditorController.ExecutionResult result = executeInternal(code, true);
+        
+        if (result.isSuccess()) {
+            String output = result.getOutput();
+            if (output != null && !output.trim().isEmpty()) {
+                result.setOutput("✅ Программа выполнена успешно!\n\n" + output);
+            } else {
+                result.setOutput("✅ Программа выполнена успешно, но вывод отсутствует.");
+            }
+        } else {
+            result.setError("❌ " + result.getError());
+        }
+        
+        return result;
+    }
+    
+    // РЕЖИМ 2: Для тестирования (чистый вывод без украшений)
+    public static EditorController.ExecutionResult executeForTesting(String code) {
+        return executeInternal(code, false);
+    }
+    
+    // Общая внутренняя логика выполнения
+    private static EditorController.ExecutionResult executeInternal(String code, boolean interactive) {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
+        
+        try {
+            // Перехватываем System.out и System.err
+            PrintStream customOut = new PrintStream(outputStream, true, "UTF-8");
+            System.setOut(customOut);
+            System.setErr(customOut);
+            
+            // Нормализуем код (БЕЗ отладочного вывода!)
+            String normalizedCode = normalizeJavaCode(code);
+            String className = extractClassName(normalizedCode);
+            
+            // Компилируем и выполняем
+            EditorController.ExecutionResult result = compileAndRunJava(normalizedCode, className);
+            
+            // Добавляем перехваченный вывод
+            String capturedOutput = outputStream.toString("UTF-8");
+            if (result.isSuccess()) {
+                result.setOutput(capturedOutput);
+            } else {
+                result.setError(result.getError() + (interactive ? "\n\nВывод программы:\n" + capturedOutput : ""));
+            }
+            
+            return result;
+            
+        } catch (Exception e) {
+            return new EditorController.ExecutionResult(false, "", 
+                "Ошибка выполнения: " + (e.getMessage() != null ? e.getMessage() : "Unknown error"));
+        } finally {
+            // Восстанавливаем оригинальные потоки
+            System.setOut(originalOut);
+            System.setErr(originalErr);
+            try {
+                outputStream.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    // Упрощенная нормализация кода
+    private static String normalizeJavaCode(String code) {
+        if (code == null || code.trim().isEmpty()) {
+            return "public class Main {\n    public static void main(String[] args) {\n        // Пустая программа\n    }\n}";
+        }
+        
+        code = code.trim();
+        
+        // Если код уже содержит класс с main методом - возвращаем как есть
+        if (code.contains("class") && code.contains("main(String[] args)")) {
+            return code;
+        }
+        
+        // Для простого кода без класса - создаем полную структуру
+        return "public class Main {\n" +
+               "    public static void main(String[] args) {\n" +
+               "        " + code.replace("\n", "\n        ") + "\n" +
+               "    }\n" +
+               "}";
+    }
+    
+    // Метод извлечения имени класса
+    private static String extractClassName(String code) {
+        try {
+            if (code.contains("public class ")) {
+                int start = code.indexOf("public class ") + 13;
+                int end = code.indexOf("{", start);
+                if (end > start) {
+                    String className = code.substring(start, end).trim();
+                    if (className.contains(" ")) {
+                        className = className.substring(0, className.indexOf(" "));
+                    }
+                    return className.trim();
+                }
+            }
+        } catch (Exception e) {
+            // Игнорируем ошибки
+        }
+        return "Main";
+    }
+    
+    // Метод компиляции и выполнения
+    private static EditorController.ExecutionResult compileAndRunJava(String code, String className) {
+        try {
+            JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+            if (compiler == null) {
+                return new EditorController.ExecutionResult(false, "", 
+                    "Java компилятор не доступен! Убедитесь, что используется JDK.");
+            }
+            
+            DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+            
+            // Создаем временную директорию
+            File tempDir = Files.createTempDirectory("java_editor").toFile();
+            tempDir.deleteOnExit();
+            
+            File sourceFile = new File(tempDir, className + ".java");
+            sourceFile.deleteOnExit();
+            
+            // Записываем код в файл
+            try (FileWriter writer = new FileWriter(sourceFile)) {
+                writer.write(code);
+            }
+            
+            // Компилируем
+            StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null);
+            Iterable<? extends JavaFileObject> compilationUnits = fileManager.getJavaFileObjectsFromFiles(Arrays.asList(sourceFile));
+            
+            List<String> options = Arrays.asList("-d", tempDir.getAbsolutePath());
+            JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics, options, null, compilationUnits);
+            
+            boolean success = task.call();
+            fileManager.close();
+            
+            if (!success) {
+                StringBuilder errorMsg = new StringBuilder("Ошибки компиляции:\n");
+                for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
+                    errorMsg.append("Строка ")
+                           .append(diagnostic.getLineNumber())
+                           .append(": ")
+                           .append(diagnostic.getMessage(null))
+                           .append("\n");
+                }
+                return new EditorController.ExecutionResult(false, "", errorMsg.toString());
+            }
+            
+            // Загружаем и выполняем класс
+            URLClassLoader classLoader = new URLClassLoader(new URL[]{tempDir.toURI().toURL()});
+            Class<?> loadedClass = classLoader.loadClass(className);
+            
+            // Вызываем main метод
+            Method mainMethod = loadedClass.getMethod("main", String[].class);
+            mainMethod.invoke(null, (Object) new String[0]);
+            
+            classLoader.close();
+            
+            return new EditorController.ExecutionResult(true, "", "");
+            
+        } catch (Exception e) {
+            String errorMessage = "Ошибка выполнения: ";
+            Throwable cause = e;
+            while (cause.getCause() != null) {
+                cause = cause.getCause();
+            }
+            errorMessage += cause.getMessage();
+            return new EditorController.ExecutionResult(false, "", errorMessage);
+        }
+    }
+}
+
 class JavaTester {
     
     public static EditorController.TestExecutionResult testSolution(String code, int problemId) {
         List<EditorController.TestCase> testCases = EditorController.TEST_CASES.get(problemId);
         if (testCases == null) {
             return new EditorController.TestExecutionResult(false, new ArrayList<>(), 0, 0, 
-                "❌ Тесты для задачи не найдены");
+                "Тесты для задачи не найдены");
         }
         
         List<EditorController.TestResult> testResults = new ArrayList<>();
@@ -259,7 +457,7 @@ class JavaTester {
             }
         }
         
-        String summary = String.format("✅ Пройдено %d из %d тестов", passedCount, testCases.size());
+        String summary = String.format("Пройдено %d из %d тестов", passedCount, testCases.size());
         boolean allPassed = passedCount == testCases.size();
         
         return new EditorController.TestExecutionResult(allPassed, testResults, 
@@ -268,27 +466,27 @@ class JavaTester {
     
     private static EditorController.TestResult runSingleTest(String code, EditorController.TestCase testCase) {
         try {
-            // Создаем код с входными данными
+            // Инжектируем входные данные ПРАВИЛЬНО
             String testCode = injectInputIntoCode(code, testCase.getInput());
             
             // Выполняем код
-            EditorController.ExecutionResult result = JavaExecutor.execute(testCode);
+            EditorController.ExecutionResult result = JavaExecutor.executeForTesting(testCode);
             
             if (!result.isSuccess()) {
                 return new EditorController.TestResult(
                     testCase.isHidden() ? "***" : testCase.getInput(),
                     testCase.isHidden() ? "***" : testCase.getExpectedOutput(),
-                    "Ошибка выполнения: " + result.getError(),
+                    "Ошибка: " + result.getError(),
                     false,
                     testCase.isHidden()
                 );
             }
             
-            // Нормализуем вывод для сравнения
+            // Сравниваем вывод
             String actualOutput = normalizeOutput(result.getOutput());
             String expectedOutput = normalizeOutput(testCase.getExpectedOutput());
             
-            boolean passed = actualOutput.equals(expectedOutput);
+            boolean passed = actualOutput.trim().equals(expectedOutput.trim());
             
             return new EditorController.TestResult(
                 testCase.isHidden() ? "***" : testCase.getInput(),
@@ -310,182 +508,39 @@ class JavaTester {
     }
     
     private static String injectInputIntoCode(String code, String input) {
-        // Заменяем System.in на наш ввод
-        String inputReplacement = 
-            "java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(\"" +
-            input.replace("\n", "\\n").replace("\"", "\\\"") +
-            "\".getBytes());\n" +
-            "System.setIn(bais);";
+        // Правильное экранирование
+        String escapedInput = input
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\t", "\\t")
+            .replace("\r", "\\r");
         
-        if (code.contains("public static void main")) {
-            // Вставляем после начала main метода
-            return code.replace("public static void main(String[] args) {", 
-                "public static void main(String[] args) {\n" + inputReplacement);
-        } else {
-            return code;
-        }
-    }
-    
-    private static String normalizeOutput(String output) {
-        return output.trim()
-            .replaceAll("\\r\\n", "\n")
-            .replaceAll("\\s+", " ")
-            .trim();
-    }
-}
-
-class JavaExecutor {
-    
-    public static EditorController.ExecutionResult execute(String code) {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        PrintStream originalOut = System.out;
-        PrintStream originalErr = System.err;
+        // Создаем код для подмены System.in
+        String inputCode = 
+            "java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream(\"" + 
+            escapedInput + "\".getBytes(java.nio.charset.StandardCharsets.UTF_8));\n" +
+            "System.setIn(inputStream);";
         
-        try {
-            PrintStream customOut = new PrintStream(outputStream, true);
-            System.setOut(customOut);
-            System.setErr(customOut);
-            
-            String normalizedCode = normalizeJavaCode(code);
-            String className = extractClassName(normalizedCode);
-            
-            EditorController.ExecutionResult result = compileAndRunJava(normalizedCode, className);
-            
-            if (result.isSuccess()) {
-                String capturedOutput = outputStream.toString("UTF-8");
-                if (!capturedOutput.isEmpty()) {
-                    result.setOutput(capturedOutput);
-                } else {
-                    result.setOutput("Программа выполнена без вывода");
-                }
-            }
-            
-            return result;
-            
-        } catch (Exception e) {
-            return new EditorController.ExecutionResult(false, "", 
-                "❌ Ошибка: " + e.getMessage());
-        } finally {
-            System.setOut(originalOut);
-            System.setErr(originalErr);
-            try {
-                outputStream.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-    
-    private static String normalizeJavaCode(String code) {
-        code = code.trim();
-        
-        if (code.contains("class") && code.contains("main(String[] args)")) {
-            return code;
+        // Если код уже содержит main метод, вставляем в начало
+        if (code.contains("public static void main(String[] args) {")) {
+            int mainStart = code.indexOf("public static void main(String[] args) {") + 42;
+            return code.substring(0, mainStart) + "\n        " + inputCode + code.substring(mainStart);
         }
         
-        if (code.contains("class") && !code.contains("main(String[] args)")) {
-            int lastBrace = code.lastIndexOf('}');
-            if (lastBrace != -1) {
-                String mainMethod = 
-                    "\n    public static void main(String[] args) {\n" +
-                    "        new " + extractClassName(code) + "().run();\n" +
-                    "    }\n" +
-                    "    \n" +
-                    "    public void run() {\n" +
-                    "    }";
-                code = code.substring(0, lastBrace) + mainMethod + "\n}";
-            }
-            return code;
-        }
-        
+        // Если нет main метода, создаем полную структуру
         return "public class Main {\n" +
                "    public static void main(String[] args) {\n" +
+               "        " + inputCode + "\n" +
                "        " + code.replace("\n", "\n        ") + "\n" +
                "    }\n" +
                "}";
     }
     
-    private static String extractClassName(String code) {
-        if (code.contains("public class ")) {
-            int start = code.indexOf("public class ") + 13;
-            int end = code.indexOf("{", start);
-            if (end > start) {
-                String className = code.substring(start, end).trim();
-                if (className.contains(" ")) {
-                    className = className.substring(0, className.indexOf(" "));
-                }
-                return className.trim();
-            }
-        } else if (code.contains("class ")) {
-            int start = code.indexOf("class ") + 6;
-            int end = code.indexOf("{", start);
-            if (end > start) {
-                String className = code.substring(start, end).trim();
-                if (className.contains(" ")) {
-                    className = className.substring(0, className.indexOf(" "));
-                }
-                return className.trim();
-            }
-        }
-        return "Main";
-    }
-    
-    private static EditorController.ExecutionResult compileAndRunJava(String code, String className) {
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            return new EditorController.ExecutionResult(false, "", 
-                "❌ Java компилятор не доступен!");
-        }
-        
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        
-        try {
-            File tempDir = new File(System.getProperty("java.io.tmpdir"), "java_editor");
-            if (!tempDir.exists()) {
-                tempDir.mkdirs();
-            }
-            
-            File sourceFile = new File(tempDir, className + ".java");
-            try (FileWriter writer = new FileWriter(sourceFile)) {
-                writer.write(code);
-            }
-            
-            StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, null, null);
-            Iterable<? extends JavaFileObject> compilationUnits = 
-                fileManager.getJavaFileObjectsFromFiles(List.of(sourceFile));
-            
-            List<String> options = List.of("-d", tempDir.getAbsolutePath());
-            JavaCompiler.CompilationTask task = compiler.getTask(
-                null, fileManager, diagnostics, options, null, compilationUnits);
-            
-            boolean success = task.call();
-            fileManager.close();
-            
-            if (!success) {
-                StringBuilder errorMsg = new StringBuilder("❌ Ошибки компиляции:\n");
-                for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
-                    errorMsg.append("Строка ")
-                           .append(diagnostic.getLineNumber())
-                           .append(": ")
-                           .append(diagnostic.getMessage(null))
-                           .append("\n");
-                }
-                return new EditorController.ExecutionResult(false, "", errorMsg.toString());
-            }
-            
-            URLClassLoader classLoader = new URLClassLoader(new URL[]{tempDir.toURI().toURL()});
-            Class<?> loadedClass = classLoader.loadClass(className);
-            
-            java.lang.reflect.Method mainMethod = loadedClass.getMethod("main", String[].class);
-            mainMethod.invoke(null, (Object) new String[0]);
-            
-            classLoader.close();
-            
-            return new EditorController.ExecutionResult(true, "", "");
-            
-        } catch (Exception e) {
-            return new EditorController.ExecutionResult(false, "", 
-                "❌ Ошибка выполнения:\n" + e.getMessage());
-        }
+    private static String normalizeOutput(String output) {
+        if (output == null) return "";
+        return output.replaceAll("\\r\\n", "\n")
+                    .replaceAll("\\r", "\n")
+                    .trim();
     }
 }
