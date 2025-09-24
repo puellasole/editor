@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java Online Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .editor-container {
+            height: 400px;
+            border: 1px solid #ddd;
+        }
+        
+        .controls {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-run {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-run:hover {
+            background: #218838;
+        }
+        
+        .output-section {
+            padding: 20px;
+        }
+        
+        .output-container {
+            height: 200px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Consolas', monospace;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .status {
+            margin-left: auto;
+            padding: 8px 12px;
+            background: white;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖥️ Java Online Editor</h1>
+            <p>Напишите и запустите Java код прямо в браузере</p>
+        </div>
+        
+        <div class="editor-container" id="editor"></div>
+        
+        <div class="controls">
+            <button class="btn btn-run" onclick="runCode()">▶ Запустить код</button>
+            <div id="status" class="status">Готов к работе...</div>
+        </div>
+        
+        <div class="output-section">
+            <h3>Вывод программы:</h3>
+            <div id="output" class="output-container"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script>
+        let editor;
+        
+        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.45.0/min/vs' }});
+        
+        require(['vs/editor/editor.main'], function() {
+            editor = monaco.editor.create(document.getElementById('editor'), {
+                value: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Привет, мир! 🚀");\n        System.out.println("Добро пожаловать в Java Online Editor!");\n    }\n}`,
+                language: 'java',
+                theme: 'vs-dark',
+                fontSize: 14,
+                automaticLayout: true
+            });
+            
+            updateStatus('Редактор загружен!', 'info');
+        });
+        
+        async function runCode() {
+            const code = editor.getValue();
+            updateStatus('Компиляция...', 'info');
+            displayOutput('⏳ Компиляция...');
+            
+            try {
+                const response = await fetch('/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code: code })
+                });
+                
+                const result = await response.json();
+                console.log('Результат:', result); // Для отладки
+                
+                if (result.success) {
+                    updateStatus('Успешно!', 'success');
+                    displayOutput(result.output || '✅ Программа выполнена без вывода');
+                } else {
+                    updateStatus('Ошибка', 'error');
+                    displayOutput(result.error || '❌ Произошла неизвестная ошибка');
+                }
+                
+            } catch (error) {
+                updateStatus('Ошибка сети', 'error');
+                displayOutput('❌ Ошибка сети: ' + error.message);
+                console.error('Ошибка:', error);
+            }
+        }
+        
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+            status.style.background = type === 'error' ? '#f8d7da' : 
+                                    type === 'success' ? '#d4edda' : '#d1ecf1';
+            status.style.color = type === 'error' ? '#721c24' : 
+                               type === 'success' ? '#155724' : '#0c5460';
+        }
+        
+        function displayOutput(content) {
+            document.getElementById('output').textContent = content;
+        }
+        
+        // Простой пример кода
+        function loadExample() {
+            editor.setValue(`public class Main {\n    public static void main(String[] args) {\n        System.out.println("Привет, мир! 🚀");\n        \n        // Простые вычисления\n        int a = 10;\n        int b = 5;\n        System.out.println(a + " + " + b + " = " + (a + b));\n        \n        // Цикл\n        for (int i = 1; i <= 3; i++) {\n            System.out.println("Итерация: " + i);\n        }\n    }\n}`);
+        }
+        
+        // Загружаем пример при старте
+        window.addEventListener('load', loadExample);
+    </script>
+</body>
+</html>
