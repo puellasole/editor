@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Java Online Editor</title>
+    <title>Java Online Judge</title>
     <style>
         * {
             margin: 0;
@@ -19,28 +19,42 @@
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 12px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             overflow: hidden;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto 1fr auto;
+            height: 95vh;
         }
         
         .header {
+            grid-column: 1 / -1;
             background: #2c3e50;
             color: white;
             padding: 20px;
             text-align: center;
         }
         
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
+        .problems-panel {
+            grid-column: 1;
+            background: #f8f9fa;
+            padding: 20px;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+        
+        .editor-panel {
+            grid-column: 2;
+            display: flex;
+            flex-direction: column;
         }
         
         .editor-container {
-            height: 400px;
+            flex: 1;
             border: 1px solid #ddd;
         }
         
@@ -50,6 +64,7 @@
             display: flex;
             gap: 10px;
             align-items: center;
+            border-top: 1px solid #ddd;
         }
         
         .btn {
@@ -67,23 +82,86 @@
             color: white;
         }
         
-        .btn-run:hover {
-            background: #218838;
+        .btn-test {
+            background: #007bff;
+            color: white;
         }
         
+        .btn-run:hover { background: #218838; }
+        .btn-test:hover { background: #0056b3; }
+        
         .output-section {
-            padding: 20px;
+            grid-column: 1 / -1;
+            height: 300px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .output-tabs {
+            display: flex;
+            background: #343a40;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            color: white;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+        }
+        
+        .tab.active {
+            background: #495057;
+            border-bottom: 3px solid #007bff;
         }
         
         .output-container {
-            height: 200px;
+            flex: 1;
             background: #1e1e1e;
             color: #d4d4d4;
             font-family: 'Consolas', monospace;
             padding: 15px;
-            border-radius: 6px;
             overflow-y: auto;
             white-space: pre-wrap;
+        }
+        
+        .problem-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .problem-card:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-color: #007bff;
+        }
+        
+        .problem-card.active {
+            border-color: #28a745;
+            background: #f8fff9;
+        }
+        
+        .test-result {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .test-passed {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .test-failed {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
         }
         
         .status {
@@ -99,93 +177,295 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🖥️ Java Online Editor</h1>
-            <p>Напишите и запустите Java код прямо в браузере</p>
+            <h1>⚡ Java Online Judge</h1>
+            <p>Решайте алгоритмические задачи на Java</p>
         </div>
         
-        <div class="editor-container" id="editor"></div>
+        <div class="problems-panel">
+            <h3>📋 Список задач</h3>
+            <div id="problems-list"></div>
+        </div>
         
-        <div class="controls">
-            <button class="btn btn-run" onclick="runCode()">▶ Запустить код</button>
-            <div id="status" class="status">Готов к работе...</div>
+        <div class="editor-panel">
+            <div class="editor-container" id="editor"></div>
+            <div class="controls">
+                <button class="btn btn-run" onclick="runCode()">▶ Запустить</button>
+                <button class="btn btn-test" onclick="testSolution()">🧪 Протестировать</button>
+                <div id="status" class="status">Готов к работе...</div>
+            </div>
         </div>
         
         <div class="output-section">
-            <h3>Вывод программы:</h3>
-            <div id="output" class="output-container"></div>
+            <div class="output-tabs">
+                <button class="tab active" onclick="showTab('output')">Вывод программы</button>
+                <button class="tab" onclick="showTab('tests')">Результаты тестов</button>
+            </div>
+            <div id="output" class="output-container">Загрузка задач...</div>
+            <div id="tests" class="output-container" style="display: none;"></div>
         </div>
     </div>
 
     <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
-    <script>
-        let editor;
-        
-        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.45.0/min/vs' }});
-        
-        require(['vs/editor/editor.main'], function() {
-            editor = monaco.editor.create(document.getElementById('editor'), {
-                value: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Привет, мир! 🚀");\n        System.out.println("Добро пожаловать в Java Online Editor!");\n    }\n}`,
-                language: 'java',
-                theme: 'vs-dark',
-                fontSize: 14,
-                automaticLayout: true
-            });
-            
-            updateStatus('Редактор загружен!', 'info');
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script>
+    let editor;
+    let currentProblemId = 1;
+    let currentActiveTab = 'output';
+    
+    require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@0.45.0/min/vs' }});
+    
+    require(['vs/editor/editor.main'], function() {
+        editor = monaco.editor.create(document.getElementById('editor'), {
+            value: '// Выберите задачу из списка слева\n// Напишите решение и нажмите "Протестировать"',
+            language: 'java',
+            theme: 'vs-dark',
+            fontSize: 14,
+            automaticLayout: true
         });
         
-        async function runCode() {
-            const code = editor.getValue();
-            updateStatus('Компиляция...', 'info');
-            displayOutput('⏳ Компиляция...');
+        loadProblems();
+        updateStatus('Система готова к работе!', 'info');
+    });
+    
+    async function loadProblems() {
+        try {
+            const response = await fetch('/problems');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const problems = await response.json();
+            console.log('Загружены задачи:', problems);
             
-            try {
-                const response = await fetch('/execute', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ code: code })
+            const problemsList = document.getElementById('problems-list');
+            problemsList.innerHTML = '';
+            
+            problems.forEach(problem => {
+                const problemCard = document.createElement('div');
+                problemCard.className = 'problem-card';
+                problemCard.dataset.problemId = problem.id;
+                problemCard.innerHTML = `
+                    <h4>${problem.title}</h4>
+                    <p style="font-size: 12px; color: #666; margin-top: 5px;">
+                        ID: ${problem.id} • Нажмите для загрузки
+                    </p>
+                `;
+                
+                problemCard.addEventListener('click', function() {
+                    loadProblem(problem.id);
                 });
                 
-                const result = await response.json();
-                console.log('Результат:', result); // Для отладки
-                
-                if (result.success) {
-                    updateStatus('Успешно!', 'success');
-                    displayOutput(result.output || '✅ Программа выполнена без вывода');
-                } else {
-                    updateStatus('Ошибка', 'error');
-                    displayOutput(result.error || '❌ Произошла неизвестная ошибка');
-                }
-                
-            } catch (error) {
-                updateStatus('Ошибка сети', 'error');
-                displayOutput('❌ Ошибка сети: ' + error.message);
-                console.error('Ошибка:', error);
+                problemsList.appendChild(problemCard);
+            });
+            
+            // Загружаем первую задачу по умолчанию
+            if (problems.length > 0) {
+                await loadProblem(problems[0].id);
             }
+            
+        } catch (error) {
+            console.error('Ошибка загрузки задач:', error);
+            displayOutput('❌ Ошибка загрузки списка задач: ' + error.message);
+            updateStatus('Ошибка загрузки задач', 'error');
+        }
+    }
+    
+    async function loadProblem(problemId) {
+    	console.log('=== DEBUG LOADPROBLEM ===');
+    	console.log('problemId:', problemId);
+    	console.log('currentProblemId before:', currentProblemId);
+        try {
+            console.log('Загрузка задачи ID:', problemId);
+            const response = await fetch('/problem/' + problemId);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const problem = await response.json();
+            console.log('Загружена задача:', problem);
+            
+            currentProblemId = problemId;
+            
+            // Обновляем активную карточку
+            document.querySelectorAll('.problem-card').forEach(card => {
+                card.classList.remove('active');
+                if (parseInt(card.dataset.problemId) === problemId) {
+                    card.classList.add('active');
+                }
+            });
+            
+            // Загружаем код в редактор
+            editor.setValue(problem.initialCode || '// Код задачи загружается...');
+            
+            // Показываем описание задачи
+            displayOutput(`📖 Задача: ${problem.title}\n\n${problem.description}\n\n💡 Напишите решение в редакторе выше и нажмите "Протестировать"`);
+            
+            updateStatus(`Загружена задача: ${problem.title}`, 'success');
+            
+        } catch (error) {
+            console.error('Ошибка загрузки задачи:', error);
+            updateStatus('Ошибка загрузки задачи', 'error');
+            displayOutput('❌ Ошибка загрузки задачи: ' + error.message);
+        }
+    }
+    
+    async function runCode() {
+        const code = editor.getValue();
+        if (!code.trim()) {
+            displayOutput('❌ Код не может быть пустым!');
+            return;
         }
         
-        function updateStatus(message, type) {
-            const status = document.getElementById('status');
+        updateStatus('Выполнение...', 'info');
+        displayOutput('⏳ Выполнение кода...');
+        
+        try {
+            const response = await fetch('/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                updateStatus('Успешно!', 'success');
+                displayOutput('✅ Программа выполнена успешно!\n\n' + (result.output || 'Вывод отсутствует'));
+            } else {
+                updateStatus('Ошибка выполнения', 'error');
+                displayOutput('❌ Ошибка выполнения:\n' + (result.error || 'Неизвестная ошибка'));
+            }
+            
+        } catch (error) {
+            updateStatus('Ошибка сети', 'error');
+            displayOutput('❌ Ошибка сети: ' + error.message);
+        }
+    }
+    
+    async function testSolution() {
+        const code = editor.getValue();
+        if (!code.trim()) {
+            displayTests('❌ Код не может быть пустым!');
+            return;
+        }
+        
+        updateStatus('Тестирование...', 'info');
+        displayTests('🧪 Запуск тестов...');
+        
+        try {
+            const response = await fetch('/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    code: code, 
+                    problemId: currentProblemId 
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Результат тестирования:', result);
+            
+            let testsHtml = '';
+            if (result.success) {
+                testsHtml += `<div style="color: #28a745; margin-bottom: 15px;">
+                    <h3>✅ ${result.summary || 'Все тесты пройдены!'}</h3>
+                </div>`;
+            } else {
+                testsHtml += `<div style="color: #dc3545; margin-bottom: 15px;">
+                    <h3>❌ ${result.summary || 'Тесты не пройдены'}</h3>
+                </div>`;
+            }
+            
+            if (result.testResults && result.testResults.length > 0) {
+                result.testResults.forEach((test, index) => {
+                    testsHtml += `
+                        <div class="test-result ${test.passed ? 'test-passed' : 'test-failed'}">
+                            <strong>Тест ${index + 1}:</strong> ${test.passed ? '✅ Пройден' : '❌ Не пройден'}
+                            ${!test.hidden || !test.passed ? `
+                                <div style="margin-top: 5px; font-size: 12px;">
+                                    <div>Вход: <code>${test.input || 'N/A'}</code></div>
+                                    <div>Ожидаемый вывод: <code>${test.expectedOutput || 'N/A'}</code></div>
+                                    <div>Полученный вывод: <code>${test.actualOutput || 'N/A'}</code></div>
+                                </div>
+                            ` : '<div style="margin-top: 5px;">Скрытый тест</div>'}
+                        </div>
+                    `;
+                });
+            } else {
+                testsHtml += '<div style="color: #856404;">Нет данных о тестах</div>';
+            }
+            
+            displayTests(testsHtml);
+            updateStatus(`Тестирование завершено: ${result.passedTests || 0}/${result.totalTests || 0}`, 
+                       result.success ? 'success' : 'error');
+            
+        } catch (error) {
+            console.error('Ошибка тестирования:', error);
+            displayTests('❌ Ошибка тестирования: ' + error.message);
+            updateStatus('Ошибка тестирования', 'error');
+        }
+    }
+    
+    function showTab(tabName) {
+        // Убираем активный класс со всех вкладок
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        
+        // Скрываем все контейнеры
+        document.querySelectorAll('.output-container').forEach(container => {
+            container.style.display = 'none';
+        });
+        
+        // Активируем выбранную вкладку
+        const activeTab = document.querySelector(`.tab[onclick="showTab('${tabName}')"]`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+        }
+        
+        // Показываем выбранный контейнер
+        const activeContainer = document.getElementById(tabName);
+        if (activeContainer) {
+            activeContainer.style.display = 'block';
+        }
+        
+        currentActiveTab = tabName;
+    }
+    
+    function displayOutput(content) {
+        const outputElement = document.getElementById('output');
+        if (outputElement) {
+            outputElement.textContent = content;
+        }
+        showTab('output');
+    }
+    
+    function displayTests(content) {
+        const testsElement = document.getElementById('tests');
+        if (testsElement) {
+            testsElement.innerHTML = content;
+        }
+        showTab('tests');
+    }
+    
+    function updateStatus(message, type) {
+        const status = document.getElementById('status');
+        if (status) {
             status.textContent = new Date().toLocaleTimeString() + ' - ' + message;
             status.style.background = type === 'error' ? '#f8d7da' : 
                                     type === 'success' ? '#d4edda' : '#d1ecf1';
             status.style.color = type === 'error' ? '#721c24' : 
                                type === 'success' ? '#155724' : '#0c5460';
         }
-        
-        function displayOutput(content) {
-            document.getElementById('output').textContent = content;
-        }
-        
-        // Простой пример кода
-        function loadExample() {
-            editor.setValue(`public class Main {\n    public static void main(String[] args) {\n        System.out.println("Привет, мир! 🚀");\n        \n        // Простые вычисления\n        int a = 10;\n        int b = 5;\n        System.out.println(a + " + " + b + " = " + (a + b));\n        \n        // Цикл\n        for (int i = 1; i <= 3; i++) {\n            System.out.println("Итерация: " + i);\n        }\n    }\n}`);
-        }
-        
-        // Загружаем пример при старте
-        window.addEventListener('load', loadExample);
-    </script>
+    }
+    
+    // Инициализация вкладок при загрузке
+    document.addEventListener('DOMContentLoaded', function() {
+        // Устанавливаем первую вкладку активной
+        showTab('output');
+    });
+</script>
 </body>
 </html>
